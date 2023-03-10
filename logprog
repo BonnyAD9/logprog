@@ -1,0 +1,107 @@
+#!/usr/bin/bash
+
+function logprog_help() {
+    echo "Welcome to logprog
+
+logprog is used for showing the progress of a operation from a log file
+
+Usage:
+  logprog [FLAGS] PATH_TO_LOG_FILE
+
+Flags:
+  -l
+    Sets the number of lines to read from the end of the log file to get the
+    progress. Default value is '10'.
+
+  -m
+    Sets the regex patern to get the percentage. The first captured value is
+    used. Default value is '([0-9]\.?[0-9]*)%'.
+
+  -s
+    Sets how often the value is refreshed in seconds.
+    The default value is '10'."
+}
+
+if [ ! "${1:+x}" ] ; then
+    logprog_help
+    exit 0
+fi
+
+while getopts hl:m:s: arg ; do
+    case $arg in
+    l)
+        if [[ ! "$OPTARG" =~ [0-9]* ]] ; then
+            echo "Failure: invalid number of lines" >&2
+            exit 1
+        fi
+        LLINES="$OPTARG"
+        ;;
+    m)  MATCH=$OPTARG ;;
+    s)  SLP=$OPTARG
+        if [[ ! "$SLP" =~ [0-9]*\.?[0-9]* ]] ; then
+            echo "Failure invalid sleep number" >&2
+            exit 1
+        fi
+        ;;
+    h)  logprog_help
+        exit 0
+        ;;
+    *)
+        echo "Failure: invalid argument" >&2
+        exit 1
+        ;;
+    esac
+done
+
+((OPTIND--))
+shift $OPTIND
+
+if [ ! -r "$1" ] ; then
+    echo "Failure: expected path to readable file" >&2
+    exit 1
+fi
+
+FILE="$1"
+LLINES=${LLINES:-10}
+MATCH=${MATCH:-([0-9]*\.?[0-9]*)%}
+SLP=${SLP:-10}
+
+function get_prog() {
+    tail -n -$LLINES "$FILE" \
+        | gawk 'BEGIN {
+            last = "done!"
+        }
+
+        match($0, /'"$MATCH"'/, a) {
+            last = a[1];
+        }
+
+        END {
+            print last
+        }'
+}
+
+START_TIME=`date +%s`
+START_PROG=`get_prog`
+
+if [[ ! "$START_PROG" =~ [0-9]*\.?[0-9] ]] ; then
+    echo "Pattern did not match only numbers" >&2
+    exit 1
+fi
+
+while true ; do
+    CUR_TIME=`date +%s`
+    CUR_PROG=`get_prog`
+    if [[ $CUR_PROG == "done!" ]] ; then
+        break;
+    fi
+    PROG_DIF=`bc <<< "$CUR_PROG - $START_PROG"`
+    TIME_DIF=$(( $CUR_TIME - $START_TIME ))
+    PROG_REM=`bc <<< "100 - $CUR_PROG"`
+    TIME_REM=`bc <<< "scale = 10; $TIME_DIF * $PROG_REM / $PROG_DIF"`
+    printf "\x1b[H\x1b[2J"
+    echo "$CUR_PROG% ETA: "`date -d@$TIME_REM -u +%H:%M:%S 2>/dev/null`
+    sleep $SLP
+done
+
+echo "DONE!"
