@@ -1,5 +1,5 @@
 # logprog
-Simple script that extracts and repeatedly shows percentage from a log file and ETA.
+Simple script that shows progress of a operation extracted from a log file.
 
 ## Example
 ```
